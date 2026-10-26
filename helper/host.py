@@ -37,7 +37,7 @@ u.SetWindowPlacement.argtypes = [W.HWND, C.POINTER(Placement)]
 u.GetForegroundWindow.restype = W.HWND
 u.SetForegroundWindow.argtypes = [W.HWND]
 u.SetForegroundWindow.restype = W.BOOL
-u.keybd_event.argtypes = [W.BYTE, W.BYTE, W.DWORD, W.ULONG_PTR]
+u.keybd_event.argtypes = [W.BYTE, W.BYTE, W.DWORD, C.c_size_t]
 VK_F = 0x46
 KEYUP = 0x0002
 
