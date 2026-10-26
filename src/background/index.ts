@@ -148,7 +148,7 @@ async function edge(id: number, inside: boolean) {
     cancel(id);
     if (
       settings.autoExit &&
-      !t.snapshot.nativeFullscreen &&
+      (!t.snapshot.nativeFullscreen || controller.sessions.get(t.windowId)?.native) &&
       controller.sessions.get(t.windowId)?.trigger !== "idle"
     )
       await exit(t.windowId);
@@ -194,6 +194,7 @@ async function update(id: number, wid: number, s: Snapshot) {
   if (
     owned?.tabId === id &&
     s.nativeFullscreen &&
+    !owned.native &&
     !navigated &&
     settings.enabled
   ) {
@@ -212,7 +213,7 @@ async function update(id: number, wid: number, s: Snapshot) {
     t.pointer = { inside: false, armed: false, blocked: true };
     await saveTabs();
   }
-  if (ineligible(s, settings) || navigated) {
+  if ((ineligible(s, settings) && !(owned?.native && s.nativeFullscreen)) || navigated) {
     cancel(id);
     if (controller.sessions.get(wid)?.tabId === id) await exit(wid);
   }
@@ -342,6 +343,7 @@ chrome.windows.onBoundsChanged.addListener((w) => {
     const s = controller.sessions.get(w.id!);
     if (
       s &&
+      !s.native &&
       (await chrome.windows.get(w.id!).catch(() => null))?.state !==
         "fullscreen"
     ) {
@@ -428,7 +430,7 @@ chrome.alarms.onAlarm.addListener(() => {
         s.phase === "manual" ||
         !tab?.active ||
         !snap ||
-        ineligible(snap, settings)
+        (ineligible(snap, settings) && !(s.native && snap.nativeFullscreen))
       )
         await exit(wid);
     }
