@@ -11,6 +11,7 @@ let settings = defaults,
   titleBackup = "",
   titleToken = "";
 let activationTrigger: "leave" | "idle" = "leave";
+let idleExitRequested = false;
 const toast = new ToastManager(),
   listeners = new AbortController();
 const inactivity = new PageInactivity(
@@ -25,26 +26,8 @@ const inactivity = new PageInactivity(
     void send({ type: "idle", idleTicket });
   },
 );
-// Cover intermediate player frames while the browser switches window geometry.
-const transitionCover = document.createElement("div");
-transitionCover.setAttribute("aria-hidden", "true");
-transitionCover.id = "afs-transition-cover";
-let transitionFrame = 0;
-function cover() {
-  cancelAnimationFrame(transitionFrame);
-  transitionCover.style.display = "block";
-}
-function uncover() {
-  cancelAnimationFrame(transitionFrame);
-  transitionFrame = requestAnimationFrame(() => {
-    transitionFrame = requestAnimationFrame(() => {
-      transitionCover.style.display = "none";
-    });
-  });
-}
 const style = document.createElement("style");
 style.textContent = `
- #afs-transition-cover{display:none;position:fixed;inset:0;background:#000;z-index:2147483647;pointer-events:none!important}
  html.afs-fullscreen,html.afs-fullscreen body{overflow:hidden!important}
  html.afs-fullscreen ytd-app{visibility:hidden!important}
  html.afs-fullscreen #movie_player,html.afs-fullscreen #movie_player *{visibility:visible!important}
@@ -54,8 +37,9 @@ style.textContent = `
  html.afs-fullscreen ytd-watch-flexy,html.afs-fullscreen #player,html.afs-fullscreen #player-container,html.afs-fullscreen #player-container-outer,html.afs-fullscreen #player-container-inner,html.afs-fullscreen ytd-player{transform:none!important;contain:none!important;overflow:visible!important}
  html.afs-fullscreen #movie_player .ytp-chrome-bottom{width:calc(100% - 24px)!important;left:12px!important}
 `;
-document.documentElement.append(style, transitionCover);
+document.documentElement.append(style);
 function restore() {
+  idleExitRequested = false;
   inactivity.suspend();
   document.documentElement.classList.remove("afs-fullscreen");
   prepared = false;
@@ -68,8 +52,6 @@ function shutdown() {
   stopPlayback();
   listeners.abort();
   clearInterval(lease);
-  cancelAnimationFrame(transitionFrame);
-  transitionCover.remove();
   style.remove();
 }
 async function send(m: object) {
@@ -135,7 +117,16 @@ on(
       pointerInside = true;
       void send({ type: "pointer", inside: true });
     }
-    if (p.pointerType === "mouse") inactivity.move();
+    if (p.pointerType === "mouse") {
+      if (active && activationTrigger === "idle") {
+        if (!idleExitRequested) {
+          idleExitRequested = true;
+          interact();
+        }
+        return;
+      }
+      inactivity.move();
+    }
   },
   { passive: true },
 );
@@ -205,7 +196,6 @@ chrome.runtime.onMessage.addListener((m, _sender, reply) => {
     ) {
       activationTrigger = m.trigger === "idle" ? "idle" : "leave";
       prepared = true;
-      cover();
       document.documentElement.classList.add("afs-fullscreen");
       reply({ ok: true });
     } else reply({ ok: false });
@@ -214,17 +204,13 @@ chrome.runtime.onMessage.addListener((m, _sender, reply) => {
   if (m.type === "activated") {
     activationTrigger = m.trigger === "idle" ? "idle" : "leave";
     active = true;
+    idleExitRequested = false;
     inactivity.suspend();
-    uncover();
     toast.show(settings.toast.enter, settings.toast, true);
-  }
-  if (m.type === "prepare-exit") {
-    cover();
   }
   if (m.type === "deactivate") {
     const was = active;
     restore();
-    uncover();
     if (was) toast.show(settings.toast.exit, settings.toast, false);
   }
   if (m.type === "manual-overlay") restore();
