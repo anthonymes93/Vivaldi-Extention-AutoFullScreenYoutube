@@ -11,9 +11,6 @@ let settings = defaults,
   titleBackup = "",
   titleToken = "";
 let activationTrigger: "leave" | "idle" = "leave";
-let idleFullscreenReadyAt = 0;
-let idleExitMovement = 0;
-let idleExitRequested = false;
 const toast = new ToastManager(),
   listeners = new AbortController();
 const inactivity = new PageInactivity(
@@ -41,9 +38,6 @@ style.textContent = `
 `;
 document.documentElement.append(style);
 function restore() {
-  idleFullscreenReadyAt = 0;
-  idleExitMovement = 0;
-  idleExitRequested = false;
   inactivity.suspend();
   document.documentElement.classList.remove("afs-fullscreen");
   prepared = false;
@@ -121,23 +115,7 @@ on(
       pointerInside = true;
       void send({ type: "pointer", inside: true });
     }
-    if (p.pointerType === "mouse") {
-      // Only idle-owned fullscreen exits on motion; leave-owned fullscreen
-      // continues to use the existing window-boundary return behavior.
-      if (activationTrigger === "idle" && (active || prepared)) {
-        // Ignore fullscreen resize events and tiny pointer jitter. Only a
-        // deliberate mouse movement after the transition requests one exit.
-        if (active && performance.now() >= idleFullscreenReadyAt && !idleExitRequested) {
-          idleExitMovement += Math.hypot(p.movementX, p.movementY);
-          if (idleExitMovement >= 18) {
-            idleExitRequested = true;
-            interact();
-          }
-        }
-        return;
-      }
-      inactivity.move();
-    }
+    if (p.pointerType === "mouse") inactivity.move();
   },
   { passive: true },
 );
@@ -215,9 +193,6 @@ chrome.runtime.onMessage.addListener((m, _sender, reply) => {
   if (m.type === "activated") {
     activationTrigger = m.trigger === "idle" ? "idle" : "leave";
     active = true;
-    idleFullscreenReadyAt = performance.now() + 350;
-    idleExitMovement = 0;
-    idleExitRequested = false;
     inactivity.suspend();
     toast.show(settings.toast.enter, settings.toast, true);
   }
