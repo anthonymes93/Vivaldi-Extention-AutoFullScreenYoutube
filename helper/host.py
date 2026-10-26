@@ -34,6 +34,27 @@ u.IsWindow.argtypes = [W.HWND]
 u.IsWindowVisible.argtypes = [W.HWND]
 u.GetWindowPlacement.argtypes = [W.HWND, C.POINTER(Placement)]
 u.SetWindowPlacement.argtypes = [W.HWND, C.POINTER(Placement)]
+u.GetForegroundWindow.restype = W.HWND
+u.SetForegroundWindow.argtypes = [W.HWND]
+u.SetForegroundWindow.restype = W.BOOL
+u.keybd_event.argtypes = [W.BYTE, W.BYTE, W.DWORD, W.ULONG_PTR]
+VK_F = 0x46
+KEYUP = 0x0002
+
+def native_toggle(item):
+    """Experimental foreground-only YouTube 'f' shortcut, with focus restore."""
+    if not (u.IsWindow(item['hwnd']) and identity(item['hwnd']) == item['pid']):
+        return False, 'Window binding expired'
+    old = u.GetForegroundWindow()
+    target = item['hwnd']
+    # Do not inject keys while another application is focused: Windows may
+    # refuse restoration, and cross-window input could hit the wrong target.
+    if old != target:
+        return False, 'YouTube Vivaldi window must be foreground (no focus stealing)'
+    u.keybd_event(VK_F, 0, 0, 0)
+    u.keybd_event(VK_F, 0, KEYUP, 0)
+    return True, ''
+
 k.OpenProcess.argtypes = [W.DWORD, W.BOOL, W.DWORD]
 k.OpenProcess.restype = W.HANDLE
 k.QueryFullProcessImageNameW.argtypes = [W.HANDLE, W.DWORD, W.LPWSTR, C.POINTER(W.DWORD)]
@@ -145,6 +166,8 @@ def main():
                     ok = ok and (not over or m.get('allowInside') is True) and bool(u.GetWindowPlacement(item['hwnd'], C.byref(p)))
                     if ok and wid not in guards:
                         guards[wid] = (item.copy(), p)
+            elif kind == 'native-toggle' and wid in windows and valid(windows[wid]):
+                ok, extra['reason'] = native_toggle(windows[wid])
             elif kind == 'release':
                 guards.pop(wid, None)
                 ok = True
