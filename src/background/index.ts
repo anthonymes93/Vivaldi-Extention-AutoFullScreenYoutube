@@ -118,7 +118,21 @@ async function activate(
       return;
   }
   try {
-    if (!(await controller.enter(id, t.windowId, trigger, idleTicket)))
+    // The Windows helper can send the real YouTube 'f' shortcut only when
+    // this specific Vivaldi window has foreground focus. This avoids stealing
+    // focus or routing keystrokes to another monitor. Verify real native
+    // fullscreen before recording ownership.
+    let nativeAlready = false;
+    if (trigger === "idle" && settings.detection === "helper" && native.bound.has(t.windowId)) {
+      const attempt = await native.request({ type: "native-toggle", windowId: t.windowId });
+      if (attempt.ok) {
+        const after = await chrome.tabs.sendMessage(id, { type: "snapshot" }).catch(() => null) as Snapshot | null;
+        nativeAlready = after?.nativeFullscreen === true;
+      } else if (settings.debug) {
+        console.debug("[Auto Fullscreen] Helper shortcut skipped", attempt.reason);
+      }
+    }
+    if (!(await controller.enter(id, t.windowId, trigger, idleTicket, nativeAlready)))
       await native.request({ type: "release", windowId: t.windowId });
   } catch (e) {
     t.reason = String(e);
