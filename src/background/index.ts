@@ -126,8 +126,22 @@ async function activate(
     if (trigger === "idle" && settings.detection === "helper" && native.bound.has(t.windowId)) {
       const attempt = await native.request({ type: "native-toggle", windowId: t.windowId });
       if (attempt.ok) {
-        const after = await chrome.tabs.sendMessage(id, { type: "snapshot" }).catch(() => null) as Snapshot | null;
-        nativeAlready = after?.nativeFullscreen === true;
+        // The native keyboard event and document.fullscreenchange are async.
+        // Confirm the result across a handful of render frames.
+        for (let i = 0; i < 8; i++) {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          const after = await chrome.tabs.sendMessage(id, { type: "snapshot" }).catch(() => null) as Snapshot | null;
+          if (after?.nativeFullscreen) {
+            nativeAlready = true;
+            break;
+          }
+        }
+        // Don't start browser-window fullscreen after sending a native key.
+        // An unobserved native transition might still be in flight.
+        if (!nativeAlready) {
+          await native.request({ type: "release", windowId: t.windowId });
+          return;
+        }
       } else if (settings.debug) {
         console.debug("[Auto Fullscreen] Helper shortcut skipped", attempt.reason);
       }
