@@ -46,6 +46,21 @@ export class FullscreenController {
     await this.save();
     this.log("Entering fullscreen", { tabId, windowId });
     try {
+      // Experimental native-player fullscreen; retain window fallback on rejection.
+      // A rejected request is expected without transient user activation.
+      const nativeResult = await chrome.tabs.sendMessage(tabId, {
+        type: "native-attempt",
+        trigger,
+        idleTicket,
+      }).catch(() => null);
+      if (nativeResult?.ok) {
+        s.native = true;
+        s.phase = "active";
+        await this.save();
+        this.log("Native player fullscreen active", { tabId, windowId });
+        return true;
+      }
+      this.log("Native attempt rejected; using existing window fullscreen", nativeResult?.reason);
       const prepared = await chrome.tabs.sendMessage(tabId, {
         type: "prepare",
         trigger,
@@ -75,6 +90,12 @@ export class FullscreenController {
     s.phase = "exiting";
     await this.save();
     const w = await chrome.windows.get(windowId).catch(() => null);
+    if (s.native) {
+      await chrome.tabs.sendMessage(s.tabId, { type: "native-exit" }).catch(() => {});
+      this.sessions.delete(windowId);
+      await this.save();
+      return;
+    }
     if (w) {
       if (restore && w.state === "fullscreen") {
         await chrome.windows.update(windowId, { state: s.original.state });
