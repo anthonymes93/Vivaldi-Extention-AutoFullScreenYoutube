@@ -115,7 +115,15 @@ on(
       pointerInside = true;
       void send({ type: "pointer", inside: true });
     }
-    if (p.pointerType === "mouse") inactivity.move();
+    if (p.pointerType === "mouse") {
+      // Only idle-owned fullscreen exits on motion; leave-owned fullscreen
+      // continues to use the existing window-boundary return behavior.
+      if ((active || prepared) && activationTrigger === "idle") {
+        interact();
+        return;
+      }
+      inactivity.move();
+    }
   },
   { passive: true },
 );
