@@ -77,7 +77,6 @@ export class FullscreenController {
     const w = await chrome.windows.get(windowId).catch(() => null);
     if (w) {
       if (restore && w.state === "fullscreen") {
-        await chrome.tabs.sendMessage(s.tabId, { type: "prepare-exit" }).catch(() => {});
         await chrome.windows.update(windowId, { state: s.original.state });
         if (s.original.state === "normal")
           await chrome.windows.update(windowId, {
