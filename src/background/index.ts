@@ -191,6 +191,15 @@ async function update(id: number, wid: number, s: Snapshot) {
     await saveTabs();
   }
   const owned = controller.sessions.get(wid);
+  // Native fullscreen can end outside our controller (Escape, YouTube UI).
+  // Release ownership immediately, otherwise later auto-activation is blocked.
+  if (owned?.tabId === id && owned.native && !s.nativeFullscreen &&
+      owned.phase === "active") {
+    await exit(wid);
+    t.pointer = { inside: false, armed: false, blocked: true };
+    await saveTabs();
+    return;
+  }
   if (
     owned?.tabId === id &&
     s.nativeFullscreen &&
