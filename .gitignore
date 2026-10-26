@@ -1,0 +1,7 @@
+node_modules/
+dist/
+__pycache__/
+*.zip
+artifacts/
+helper/launch.cmd
+helper/com.autofullscreen.pointer.json
