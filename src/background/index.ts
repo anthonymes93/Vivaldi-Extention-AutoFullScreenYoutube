@@ -7,8 +7,7 @@ const controller = new FullscreenController((message, data) => {
     if (settings?.debug) console.debug("[Auto Fullscreen]", message, data);
   }),
   tabs = new Map<number, TabState>(),
-  timers = new Map<number, ReturnType<typeof setTimeout>>(),
-  idleMotionReady = new Map<number, number>();
+  timers = new Map<number, ReturnType<typeof setTimeout>>();
 let settings: Settings;
 let chain: Promise<unknown> = Promise.resolve();
 function queue<T>(fn: () => Promise<T>): Promise<T> {
@@ -45,11 +44,7 @@ const native = new NativePointer(
   (wid) => {
     void queue(async () => {
       const session = controller.sessions.get(wid);
-      if (
-        session?.trigger === "idle" &&
-        session.phase === "active" &&
-        performance.now() >= (idleMotionReady.get(wid) ?? Infinity)
-      )
+      if (session?.trigger === "idle" && session.phase === "active")
         await exit(wid);
     });
   },
@@ -88,7 +83,6 @@ function cancel(id: number) {
   timers.delete(id);
 }
 async function exit(wid: number, restore = true) {
-  idleMotionReady.delete(wid);
   await controller.exit(wid, restore);
   await native.request({ type: "release", windowId: wid });
 }
@@ -162,9 +156,11 @@ async function activate(
     if (!(await controller.enter(id, t.windowId, trigger, idleTicket, nativeAlready)))
       await native.request({ type: "release", windowId: t.windowId });
     else if (trigger === "idle" && settings.detection === "helper") {
-      // The helper reports pointer movement continuously while connected.
-      // Only count motion once the fullscreen transition is settled.
-      idleMotionReady.set(t.windowId, performance.now() + 350);
+      // Cursor tracking is global: fullscreen can have its own native HWND.
+      // Arm only after a successful session so transition movement is ignored.
+      const armed = await native.request({ type: "arm-motion", windowId: t.windowId });
+      if (!armed.ok && settings.debug)
+        console.warn("[Auto Fullscreen] Failed to arm idle pointer exit");
     }
   } catch (e) {
     t.reason = String(e);
