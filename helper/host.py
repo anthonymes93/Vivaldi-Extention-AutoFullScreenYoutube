@@ -123,7 +123,7 @@ def reader():
         commands.put(None)
 
 def main():
-    windows, guards = {}, {}
+    windows, guards, motion_arms = {}, {}, {}
     threading.Thread(target=reader, daemon=True).start()
     write({'type': 'hello', 'version': 1})
     def valid(item):
@@ -168,12 +168,19 @@ def main():
                         guards[wid] = (item.copy(), p)
             elif kind == 'native-toggle' and wid in windows and valid(windows[wid]):
                 ok, extra['reason'] = native_toggle(windows[wid])
+            elif kind == 'arm-motion' and wid in windows and valid(windows[wid]):
+                pos = W.POINT()
+                ok = bool(u.GetCursorPos(C.byref(pos)))
+                if ok:
+                    motion_arms[wid] = (pos.x, pos.y)
             elif kind == 'release':
                 guards.pop(wid, None)
+                motion_arms.pop(wid, None)
                 ok = True
             elif kind == 'forget':
                 windows.pop(wid, None)
                 guards.pop(wid, None)
+                motion_arms.pop(wid, None)
                 ok = True
             if request:
                 write(dict({'requestId': request, 'ok': ok}, **extra))
@@ -181,8 +188,16 @@ def main():
                 if not valid(item):
                     windows.pop(wid, None)
                     guards.pop(wid, None)
+                    motion_arms.pop(wid, None)
                     continue
                 over, point = inside(item)
+                # Mouse motion anywhere after an explicitly armed idle session.
+                # No coordinates are persisted or sent to the browser.
+                if wid in motion_arms and point is not None:
+                    origin = motion_arms[wid]
+                    if abs(point[0] - origin[0]) + abs(point[1] - origin[1]) >= 8:
+                        motion_arms.pop(wid, None)
+                        write({'type': 'idle-motion', 'windowId': wid})
                 # Fullscreen resizing under a stationary cursor is not a pointer return.
                 if over is not None and (item['point'] is None or point != item['point']):
                     if over != item['inside']:
