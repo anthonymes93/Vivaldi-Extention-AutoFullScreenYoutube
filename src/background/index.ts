@@ -41,6 +41,13 @@ const native = new NativePointer(
       for (const id of controller.sessions.keys()) await exit(id);
     });
   },
+  (wid) => {
+    void queue(async () => {
+      const session = controller.sessions.get(wid);
+      if (session?.trigger === "idle" && session.phase === "active")
+        await exit(wid);
+    });
+  },
 );
 const ready = (async () => {
   settings = await getSettings();
@@ -148,6 +155,8 @@ async function activate(
     }
     if (!(await controller.enter(id, t.windowId, trigger, idleTicket, nativeAlready)))
       await native.request({ type: "release", windowId: t.windowId });
+    else if (trigger === "idle" && settings.detection === "helper")
+      await native.request({ type: "arm-motion", windowId: t.windowId });
   } catch (e) {
     t.reason = String(e);
     await native.request({ type: "release", windowId: t.windowId });
