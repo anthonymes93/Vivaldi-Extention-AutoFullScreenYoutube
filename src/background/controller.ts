@@ -111,13 +111,25 @@ export class FullscreenController {
       await chrome.tabs
         .sendMessage(s.tabId, { type: "deactivate" })
         .catch(() => {});
-      if (s.original.state === "normal")
-        await chrome.windows.update(windowId, {
-          left: s.original.left,
-          top: s.original.top,
-          width: s.original.width,
-          height: s.original.height,
-        });
+      if (s.original.state === "normal") {
+        // Chrome ordinarily restores the original bounds itself. Avoid a
+        // second visible resize unless the restored geometry actually differs.
+        const current = await chrome.windows.get(windowId);
+        const original = s.original;
+        const differs = (["left", "top", "width", "height"] as const).some(
+          (key) =>
+            original[key] !== undefined &&
+            current[key] !== undefined &&
+            Math.abs(current[key]! - original[key]!) > 2,
+        );
+        if (differs)
+          await chrome.windows.update(windowId, {
+            left: original.left,
+            top: original.top,
+            width: original.width,
+            height: original.height,
+          });
+      }
     } else {
       await chrome.tabs
         .sendMessage(s.tabId, { type: "deactivate" })
