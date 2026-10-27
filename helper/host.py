@@ -200,11 +200,6 @@ def main():
                         write({'type': 'idle-motion', 'windowId': wid})
                 # Fullscreen resizing under a stationary cursor is not a pointer return.
                 if over is not None and (item['point'] is None or point != item['point']):
-                    if over and item['point'] is not None:
-                        dx = abs(point[0] - item['point'][0])
-                        dy = abs(point[1] - item['point'][1])
-                        if dx + dy >= 2:
-                            write({'type': 'window-motion', 'windowId': wid})
                     if over != item['inside']:
                         initial = item['inside'] is None
                         item['inside'] = over
