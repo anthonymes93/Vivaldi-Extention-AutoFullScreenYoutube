@@ -7,7 +7,8 @@ const controller = new FullscreenController((message, data) => {
     if (settings?.debug) console.debug("[Auto Fullscreen]", message, data);
   }),
   tabs = new Map<number, TabState>(),
-  timers = new Map<number, ReturnType<typeof setTimeout>>();
+  timers = new Map<number, ReturnType<typeof setTimeout>>(),
+  idleMotionReady = new Map<number, number>();
 let settings: Settings;
 let chain: Promise<unknown> = Promise.resolve();
 function queue<T>(fn: () => Promise<T>): Promise<T> {
@@ -44,7 +45,11 @@ const native = new NativePointer(
   (wid) => {
     void queue(async () => {
       const session = controller.sessions.get(wid);
-      if (session?.trigger === "idle" && session.phase === "active")
+      if (
+        session?.trigger === "idle" &&
+        session.phase === "active" &&
+        performance.now() >= (idleMotionReady.get(wid) ?? Infinity)
+      )
         await exit(wid);
     });
   },
@@ -83,6 +88,7 @@ function cancel(id: number) {
   timers.delete(id);
 }
 async function exit(wid: number, restore = true) {
+  idleMotionReady.delete(wid);
   await controller.exit(wid, restore);
   await native.request({ type: "release", windowId: wid });
 }
@@ -155,8 +161,11 @@ async function activate(
     }
     if (!(await controller.enter(id, t.windowId, trigger, idleTicket, nativeAlready)))
       await native.request({ type: "release", windowId: t.windowId });
-    else if (trigger === "idle" && settings.detection === "helper")
-      await native.request({ type: "arm-motion", windowId: t.windowId });
+    else if (trigger === "idle" && settings.detection === "helper") {
+      // The helper reports pointer movement continuously while connected.
+      // Only count motion once the fullscreen transition is settled.
+      idleMotionReady.set(t.windowId, performance.now() + 350);
+    }
   } catch (e) {
     t.reason = String(e);
     await native.request({ type: "release", windowId: t.windowId });
