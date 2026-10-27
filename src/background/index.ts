@@ -125,43 +125,11 @@ async function activate(
       return;
   }
   try {
-    // The Windows helper can send the real YouTube 'f' shortcut only when
-    // this specific Vivaldi window has foreground focus. This avoids stealing
-    // focus or routing keystrokes to another monitor. Verify real native
-    // fullscreen before recording ownership.
-    let nativeAlready = false;
-    if (trigger === "idle" && settings.detection === "helper" && native.bound.has(t.windowId)) {
-      const attempt = await native.request({ type: "native-toggle", windowId: t.windowId });
-      if (attempt.ok) {
-        // The native keyboard event and document.fullscreenchange are async.
-        // Confirm the result across a handful of render frames.
-        for (let i = 0; i < 8; i++) {
-          await new Promise((resolve) => setTimeout(resolve, 50));
-          const after = await chrome.tabs.sendMessage(id, { type: "snapshot" }).catch(() => null) as Snapshot | null;
-          if (after?.nativeFullscreen) {
-            nativeAlready = true;
-            break;
-          }
-        }
-        // Don't start browser-window fullscreen after sending a native key.
-        // An unobserved native transition might still be in flight.
-        if (!nativeAlready) {
-          await native.request({ type: "release", windowId: t.windowId });
-          return;
-        }
-      } else if (settings.debug) {
-        console.debug("[Auto Fullscreen] Helper shortcut skipped", attempt.reason);
-      }
-    }
-    if (!(await controller.enter(id, t.windowId, trigger, idleTicket, nativeAlready)))
+    // Keep idle sessions on the browser-window path so page pointermove can
+    // reliably exit them. The Windows helper remains responsible for tracking
+    // monitor crossings; don't trigger YouTube's native 'f' shortcut here.
+    if (!(await controller.enter(id, t.windowId, trigger, idleTicket)))
       await native.request({ type: "release", windowId: t.windowId });
-    else if (trigger === "idle" && settings.detection === "helper") {
-      // Cursor tracking is global: fullscreen can have its own native HWND.
-      // Arm only after a successful session so transition movement is ignored.
-      const armed = await native.request({ type: "arm-motion", windowId: t.windowId });
-      if (!armed.ok && settings.debug)
-        console.warn("[Auto Fullscreen] Failed to arm idle pointer exit");
-    }
   } catch (e) {
     t.reason = String(e);
     await native.request({ type: "release", windowId: t.windowId });
