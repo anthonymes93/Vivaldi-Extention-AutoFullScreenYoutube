@@ -51,6 +51,10 @@ export class FullscreenController {
         s.native = true;
         s.phase = "active";
         await this.save();
+        await chrome.tabs.sendMessage(tabId, {
+          type: "native-activated",
+          trigger,
+        });
         return true;
       }
       // Experimental native-player fullscreen; retain window fallback on rejection.
