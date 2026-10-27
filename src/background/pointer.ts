@@ -26,7 +26,10 @@ export class NativePointer {
           typeof m.inside === "boolean"
         )
           this.edge(m.windowId, m.inside, m.initial === true);
-        if (m.type === "idle-motion" && Number.isInteger(m.windowId))
+        if (
+          (m.type === "idle-motion" || m.type === "window-motion") &&
+          Number.isInteger(m.windowId)
+        )
           this.idleMotion(m.windowId);
       });
       port.onDisconnect.addListener(() => {
