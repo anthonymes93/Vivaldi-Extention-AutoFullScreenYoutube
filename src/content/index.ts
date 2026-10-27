@@ -218,15 +218,33 @@ chrome.runtime.onMessage.addListener((m, _sender, reply) => {
     });
     return true;
   }
+  if (m.type === "native-activated") {
+    // A trusted 'f' keystroke from the Windows helper started this session.
+    // Track it exactly like other extension-owned idle sessions.
+    if (document.fullscreenElement) {
+      nativeOwned = true;
+      activationTrigger = m.trigger === "idle" ? "idle" : "leave";
+      active = true;
+      idleExitRequested = false;
+      inactivity.suspend();
+      toast.show(settings.toast.enter, settings.toast, true);
+    }
+    reply({ ok: !!document.fullscreenElement });
+    return;
+  }
   if (m.type === "native-exit") {
-    const owned = nativeOwned;
+    // Ownership was checked by the background controller. Also support
+    // helper-started sessions, which do not originate in requestFullscreen().
+    const wasActive = active || nativeOwned;
     nativeOwned = false;
-    if (owned && document.fullscreenElement)
+    if (document.fullscreenElement) {
       void document.exitFullscreen().catch(() => {}).finally(() => {
         restore();
-        toast.show(settings.toast.exit, settings.toast, false);
+        if (wasActive) toast.show(settings.toast.exit, settings.toast, false);
       });
-    else restore();
+    } else {
+      restore();
+    }
     reply({ ok: true });
     return;
   }
