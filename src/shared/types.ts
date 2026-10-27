@@ -41,6 +41,7 @@ export type Snapshot = {
   url: string;
 };
 export type Session = {
+  native?: boolean;
   trigger: "leave" | "idle";
   tabId: number;
   windowId: number;

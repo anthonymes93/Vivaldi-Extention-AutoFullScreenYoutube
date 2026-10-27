@@ -12,6 +12,7 @@ let settings = defaults,
   titleToken = "";
 let activationTrigger: "leave" | "idle" = "leave";
 let idleExitRequested = false;
+let nativeOwned = false;
 const toast = new ToastManager(),
   listeners = new AbortController();
 const inactivity = new PageInactivity(
@@ -39,6 +40,9 @@ style.textContent = `
 `;
 document.documentElement.append(style);
 function restore() {
+  if (nativeOwned && document.fullscreenElement)
+    void document.exitFullscreen().catch(() => {});
+  nativeOwned = false;
   idleExitRequested = false;
   inactivity.suspend();
   document.documentElement.classList.remove("afs-fullscreen");
@@ -186,6 +190,62 @@ chrome.runtime.onMessage.addListener((m, _sender, reply) => {
   }
   if (m.type === "snapshot") {
     reply(readSnapshot());
+    return;
+  }
+  if (m.type === "native-attempt") {
+    if (ineligible(readSnapshot(), settings) ||
+        (m.trigger === "idle" && !inactivity.ready(m.idleTicket))) {
+      reply({ ok: false, reason: "Not eligible" });
+      return;
+    }
+    const player = document.querySelector<HTMLElement>("#movie_player");
+    if (!player || document.fullscreenElement) {
+      reply({ ok: false, reason: "Player unavailable or already fullscreen" });
+      return;
+    }
+    // Most browsers reject this when no recent user activation exists.
+    void player.requestFullscreen().then(() => {
+      nativeOwned = true;
+      activationTrigger = m.trigger === "idle" ? "idle" : "leave";
+      active = true;
+      idleExitRequested = false;
+      inactivity.suspend();
+      toast.show(settings.toast.enter, settings.toast, true);
+      reply({ ok: true });
+    }).catch(e => {
+      console.info("[Auto Fullscreen] Native fullscreen blocked; falling back", e);
+      reply({ ok: false, reason: String(e) });
+    });
+    return true;
+  }
+  if (m.type === "native-activated") {
+    // A trusted 'f' keystroke from the Windows helper started this session.
+    // Track it exactly like other extension-owned idle sessions.
+    if (document.fullscreenElement) {
+      nativeOwned = true;
+      activationTrigger = m.trigger === "idle" ? "idle" : "leave";
+      active = true;
+      idleExitRequested = false;
+      inactivity.suspend();
+      toast.show(settings.toast.enter, settings.toast, true);
+    }
+    reply({ ok: !!document.fullscreenElement });
+    return;
+  }
+  if (m.type === "native-exit") {
+    // Ownership was checked by the background controller. Also support
+    // helper-started sessions, which do not originate in requestFullscreen().
+    const wasActive = active || nativeOwned;
+    nativeOwned = false;
+    if (document.fullscreenElement) {
+      void document.exitFullscreen().catch(() => {}).finally(() => {
+        restore();
+        if (wasActive) toast.show(settings.toast.exit, settings.toast, false);
+      });
+    } else {
+      restore();
+    }
+    reply({ ok: true });
     return;
   }
   if (m.type === "prepare") {

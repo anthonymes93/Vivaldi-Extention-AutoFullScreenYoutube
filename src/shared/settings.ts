@@ -5,7 +5,7 @@ export const defaults: Settings = {
   threshold: 20,
   delay: 0,
   idleEnabled: true,
-  idleDelay: 5,
+  idleDelay: 3,
   manualOverride: "return-leave",
   detection: "browser",
   debug: false,
@@ -40,7 +40,7 @@ export function normalize(raw: unknown): Settings {
     threshold: num(r.threshold, 20, 0, 500),
     delay: num(r.delay, 0, 0, 10),
     idleEnabled: bool(r.idleEnabled, true),
-    idleDelay: num(r.idleDelay, 5, 1, 300),
+    idleDelay: num(r.idleDelay, 3, 1, 300),
     manualOverride:
       r.manualOverride === "navigation" ? "navigation" : "return-leave",
     detection: r.detection === "helper" ? "helper" : "browser",
@@ -78,5 +78,15 @@ export function normalize(raw: unknown): Settings {
   };
 }
 export async function getSettings() {
-  return normalize((await chrome.storage.local.get("settings")).settings);
+  const stored = await chrome.storage.local.get(["settings", "idleDelayV3Migrated"]);
+  const settings = normalize(stored.settings);
+  // One-time upgrade of the old 5-second default. Preserve other custom delays.
+  if (!stored.idleDelayV3Migrated) {
+    if (settings.idleDelay === 5) {
+      settings.idleDelay = 3;
+      await chrome.storage.local.set({ settings });
+    }
+    await chrome.storage.local.set({ idleDelayV3Migrated: true });
+  }
+  return settings;
 }

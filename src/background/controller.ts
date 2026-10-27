@@ -21,6 +21,7 @@ export class FullscreenController {
     windowId: number,
     trigger: Session["trigger"] = "leave",
     idleTicket?: string,
+    nativeAlready = false,
   ) {
     if (this.sessions.has(windowId)) return false;
     const w = await chrome.windows.get(windowId);
@@ -46,6 +47,33 @@ export class FullscreenController {
     await this.save();
     this.log("Entering fullscreen", { tabId, windowId });
     try {
+      if (nativeAlready) {
+        s.native = true;
+        s.phase = "active";
+        await this.save();
+        await chrome.tabs.sendMessage(tabId, {
+          type: "native-activated",
+          trigger,
+        });
+        return true;
+      }
+      // Experimental native-player fullscreen; retain window fallback on rejection.
+      // A rejected request is expected without transient user activation.
+      const nativeResult = trigger === "idle"
+        ? null
+        : await chrome.tabs.sendMessage(tabId, {
+            type: "native-attempt",
+            trigger,
+            idleTicket,
+          }).catch(() => null);
+      if (nativeResult?.ok) {
+        s.native = true;
+        s.phase = "active";
+        await this.save();
+        this.log("Native player fullscreen active", { tabId, windowId });
+        return true;
+      }
+      this.log("Native attempt rejected; using existing window fullscreen", nativeResult?.reason);
       const prepared = await chrome.tabs.sendMessage(tabId, {
         type: "prepare",
         trigger,
@@ -75,21 +103,44 @@ export class FullscreenController {
     s.phase = "exiting";
     await this.save();
     const w = await chrome.windows.get(windowId).catch(() => null);
-    if (w) {
-      if (restore && w.state === "fullscreen") {
-        await chrome.windows.update(windowId, { state: s.original.state });
-        if (s.original.state === "normal")
+    if (s.native) {
+      await chrome.tabs.sendMessage(s.tabId, { type: "native-exit" }).catch(() => {});
+      this.sessions.delete(windowId);
+      await this.save();
+      return;
+    }
+    if (w && restore && w.state === "fullscreen") {
+      // Restore window state first, then immediately release the expanded
+      // YouTube player layout. Don't keep the viewport-sized player visible
+      // while the second bounds update restores a normal-sized window.
+      await chrome.windows.update(windowId, { state: s.original.state });
+      await chrome.tabs
+        .sendMessage(s.tabId, { type: "deactivate" })
+        .catch(() => {});
+      if (s.original.state === "normal") {
+        // Chrome ordinarily restores the original bounds itself. Avoid a
+        // second visible resize unless the restored geometry actually differs.
+        const current = await chrome.windows.get(windowId);
+        const original = s.original;
+        const differs = (["left", "top", "width", "height"] as const).some(
+          (key) =>
+            original[key] !== undefined &&
+            current[key] !== undefined &&
+            Math.abs(current[key]! - original[key]!) > 2,
+        );
+        if (differs)
           await chrome.windows.update(windowId, {
-            left: s.original.left,
-            top: s.original.top,
-            width: s.original.width,
-            height: s.original.height,
+            left: original.left,
+            top: original.top,
+            width: original.width,
+            height: original.height,
           });
       }
+    } else {
+      await chrome.tabs
+        .sendMessage(s.tabId, { type: "deactivate" })
+        .catch(() => {});
     }
-    await chrome.tabs
-      .sendMessage(s.tabId, { type: "deactivate" })
-      .catch(() => {});
     this.sessions.delete(windowId);
     await this.save();
     this.log("Fullscreen released", { windowId, restore });

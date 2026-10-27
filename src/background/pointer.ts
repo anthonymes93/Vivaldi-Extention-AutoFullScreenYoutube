@@ -6,6 +6,7 @@ export class NativePointer {
   constructor(
     private edge: (windowId: number, inside: boolean, initial: boolean) => void,
     private lost: () => void,
+    private idleMotion: (windowId: number) => void,
   ) {}
   connect() {
     if (this.port) return;
@@ -25,6 +26,11 @@ export class NativePointer {
           typeof m.inside === "boolean"
         )
           this.edge(m.windowId, m.inside, m.initial === true);
+        if (
+          (m.type === "idle-motion" || m.type === "window-motion") &&
+          Number.isInteger(m.windowId)
+        )
+          this.idleMotion(m.windowId);
       });
       port.onDisconnect.addListener(() => {
         this.status = chrome.runtime.lastError?.message || "Disconnected";
