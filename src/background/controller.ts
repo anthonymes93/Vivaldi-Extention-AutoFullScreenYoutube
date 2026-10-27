@@ -59,11 +59,13 @@ export class FullscreenController {
       }
       // Experimental native-player fullscreen; retain window fallback on rejection.
       // A rejected request is expected without transient user activation.
-      const nativeResult = await chrome.tabs.sendMessage(tabId, {
-        type: "native-attempt",
-        trigger,
-        idleTicket,
-      }).catch(() => null);
+      const nativeResult = trigger === "idle"
+        ? null
+        : await chrome.tabs.sendMessage(tabId, {
+            type: "native-attempt",
+            trigger,
+            idleTicket,
+          }).catch(() => null);
       if (nativeResult?.ok) {
         s.native = true;
         s.phase = "active";
