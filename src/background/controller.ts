@@ -103,21 +103,26 @@ export class FullscreenController {
       await this.save();
       return;
     }
-    if (w) {
-      if (restore && w.state === "fullscreen") {
-        await chrome.windows.update(windowId, { state: s.original.state });
-        if (s.original.state === "normal")
-          await chrome.windows.update(windowId, {
-            left: s.original.left,
-            top: s.original.top,
-            width: s.original.width,
-            height: s.original.height,
-          });
-      }
+    if (w && restore && w.state === "fullscreen") {
+      // Restore window state first, then immediately release the expanded
+      // YouTube player layout. Don't keep the viewport-sized player visible
+      // while the second bounds update restores a normal-sized window.
+      await chrome.windows.update(windowId, { state: s.original.state });
+      await chrome.tabs
+        .sendMessage(s.tabId, { type: "deactivate" })
+        .catch(() => {});
+      if (s.original.state === "normal")
+        await chrome.windows.update(windowId, {
+          left: s.original.left,
+          top: s.original.top,
+          width: s.original.width,
+          height: s.original.height,
+        });
+    } else {
+      await chrome.tabs
+        .sendMessage(s.tabId, { type: "deactivate" })
+        .catch(() => {});
     }
-    await chrome.tabs
-      .sendMessage(s.tabId, { type: "deactivate" })
-      .catch(() => {});
     this.sessions.delete(windowId);
     await this.save();
     this.log("Fullscreen released", { windowId, restore });
